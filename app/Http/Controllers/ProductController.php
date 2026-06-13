@@ -1,0 +1,250 @@
+<?php
+
+namespace App\Http\Controllers;
+use App\Services\ProductService;
+use App\Services\DiscountService;
+use Illuminate\Http\Request;
+
+class ProductController extends Controller{
+    private $productService;
+    private $discountService;
+
+    public function __construct(ProductService $productService, DiscountService $discountService){
+        $this->productService = $productService;
+        $this->discountService = $discountService;
+    }
+
+    public function getAllProduct(Request $request)
+    {
+        $query = $request->input('search');
+        if ($query) {
+            $products = $this->productService->searchProduct($query);
+        } else {
+            $products = $this->productService->getAllProducts();
+        }
+        return view('admin.products.show', compact('products'));
+    }
+
+    // Hiển thị form tạo sản phẩm
+    public function createProduct()
+    {
+        return view('admin.products.create');
+    }
+
+    // Xem chi tiết sản phẩm
+    public function detailProduct($id)
+    {
+        try {
+            $product = $this->productService->getProductById($id);
+            if (!$product) {
+                return view('admin.products.detail', ['product'=>null]);
+            }
+            return view('admin.products.detail', compact('product'));
+        } catch (\Throwable $th) {
+            return view('admin.products.detail', ['product'=>null]);
+        }
+        
+    }
+
+    public function getProductDetailPage($id){
+        $product = $this->productService->getProductById($id);
+        $reviews = $this->productService->getReviewWithIDProduct($id);
+        $allproduct= $this->productService->getAllProductsWithoutPagination();
+        $productDiscounts = $this->discountService->getAllProductDiscountActiveWithoutPagination();
+
+        $userId = session('user_id') ?? auth()->id();
+        $hasPurchased = false;
+        if ($userId) {
+            $hasPurchased = \App\Models\Order::where('user_id', $userId)
+                ->where('order_status', 'complete')
+                ->whereHas('orderDetails', function ($query) use ($id) {
+                    $query->where('product_id', $id);
+                })
+                ->exists();
+        }
+
+        return view('client.product.detail', compact('product','allproduct', 'reviews', 'productDiscounts', 'hasPurchased' ));
+    }
+
+    // Xử lý tạo sản phẩm
+    public function handleCreateProduct(Request $request)
+    {
+        // Validate dữ liệu
+        $request->validate([
+            'product_name' => 'required|string|max:255',
+            'product_detailDesc' => 'required|string',
+            'product_shortDesc' => 'nullable|string|max:500',
+            'product_price' => 'required|numeric|min:0',
+            'product_factory' => 'required|string|max:255',
+            'product_target' => 'nullable|string|max:255',
+            'product_type' => 'required|string|max:100',
+            'product_quantity' => 'required|integer|min:0',
+            'product_image_url' => 'nullable|image|mimes:jpg,jpeg,png',
+        ]);
+
+        // Tạo sản phẩm qua Service
+        $this->productService->handleCreateProduct($request->all());
+
+        return redirect('/admin/product')->with('success', 'Product created successfully!');
+    }
+
+    // Hiển thị form chỉnh sửa sản phẩm
+    public function updateProduct($id)
+    {
+        try {
+            $product = $this->productService->getProductById($id);
+
+            if (!$product) {
+                return view('admin.products.update', ['product'=>null]);
+            }
+
+            return view('admin.products.update', compact('product'));
+        } catch (\Throwable $th) {
+            return view('admin.products.update', ['product'=>null]);
+        }
+        
+    }
+
+    // Xử lý cập nhật sản phẩm
+    public function handleUpdateProduct(Request $request, $id)
+    {
+        // Validate dữ liệu
+        $validatedData = $request->validate([
+            'product_name' => 'required|string|max:255',
+            'product_detailDesc' => 'required|string',
+            'product_shortDesc' => 'nullable|string|max:500',
+            'product_price' => 'required|numeric|min:0',
+            'product_factory' => 'required|string|max:255',
+            'product_target' => 'nullable|string|max:255',
+            'product_type' => 'required|string|max:100',
+            'product_quantity' => 'required|integer|min:0',
+            'product_image_url' => 'nullable|image|mimes:jpg,jpeg,png',
+        ]);
+
+        // Cập nhật thông tin sản phẩm qua Service
+        $this->productService->handleUpdateProduct($id, $validatedData);
+
+        return redirect('/admin/product')->with('success', 'Product updated successfully!');
+    }
+
+    // Xóa sản phẩm
+    public function deleteProduct($id)
+    {
+        try {
+           $product = $this->productService->getProductById($id);
+
+            if (!$product) {
+                return view('admin.products.delete', ['product'=>null]);
+            }
+
+            return view('admin.products.delete', compact('product'));
+        } catch (\Throwable $th) {
+            return view('admin.products.delete', ['product'=>null]);
+        }
+        
+    }
+
+    // Xử lý xóa sản phẩm
+    public function handleDeleteProduct($id)
+    {
+        // Xóa sản phẩm qua Service
+        $this->productService->deleteByProduct($id);
+
+        return redirect('/admin/product')->with('success', 'Product deleted successfully!');
+    }
+
+    public function filterProducts(Request $request)
+    {
+        $factoryInput = $request->input('factory');
+        $typeInput = $request->input('type');
+        $priceInput = $request->input('price');
+
+        $filters = [
+        'searchValue' => $request->input('searchValue'),
+        'factory' => $request->filled('factory') ? (is_array($factoryInput) ? $factoryInput : explode(',', $factoryInput)) : [],
+        'type' => $request->filled('type') ? (is_array($typeInput) ? $typeInput : explode(',', $typeInput)) : [],
+        'price' => $request->filled('price') ? (is_array($priceInput) ? $priceInput : explode(',', $priceInput)) : [],
+        'valueStar' => $request->input('valueStar'),
+        'sort' => $request->input('sort'),
+    ];
+
+        $perPage = $request->input('per_page', 9); // Số sản phẩm mỗi trang
+
+        $products = $this->productService->filterProducts($filters, $perPage);
+
+         if ($request->ajax()) {
+        return view('client.product.show', compact('products'))->render();
+    }
+
+        return view('client.product.show', compact('products'));
+    }
+
+    public function suggestProducts(Request $request)
+    {
+        $keyword = $request->input('q', '');
+        $products = $this->productService->suggestProducts($keyword);
+
+        // Thêm full image URL vào response
+        $products->transform(function ($product) {
+            $product->image_url = $product->product_image_url
+                ? asset('products/' . $product->product_image_url)
+                : null;
+            return $product;
+        });
+
+        return response()->json($products);
+    }
+
+    public function postConfirmComment(Request $request)
+    {
+        try {
+            $rating = $request->input('radio-sort');
+            $comment = $request->input('description');
+            $productId = $request->input('id');
+
+            // Lấy người dùng hiện tại từ session hoặc auth guard
+            $userId = session('user_id') ?? auth()->id();
+            if (!$userId) {
+                return redirect('/login')->with('user', 'bạn cần đăng nhập!');
+            }
+
+            // Kiểm tra xem đã mua sản phẩm này chưa
+            $hasPurchased = \App\Models\Order::where('user_id', $userId)
+                ->where('order_status', 'complete')
+                ->whereHas('orderDetails', function ($query) use ($productId) {
+                    $query->where('product_id', $productId);
+                })
+                ->exists();
+
+            if (!$hasPurchased) {
+                return redirect()->back()->with('error', 'Bạn chỉ có thể bình luận sau khi đã mua sản phẩm này!');
+            }
+
+            if(!$this->productService->postConfirmComment($userId, $productId, $rating, $comment )){
+                return redirect('/login')->with('user', 'bạn cần đăng nhập!');
+            }
+            // Chuyển hướng lại trang sản phẩm
+            return redirect('/product/' . $productId)->with('success', 'Cảm ơn bạn đã đánh giá!');
+        } catch (\Throwable $th) {
+            return redirect('/login')->with('user', 'bạn cần đăng nhập!');
+        }
+    }
+
+    public function postDeleteComment(Request $request, $id)
+    {
+        try {
+            $productId=$request->input('productId');
+            if(!$id){
+                return redirect('/product/' . $productId)->with('error', 'Không có id comment');
+            }
+
+            if(!$this->productService->handleDeleteComment($id)){
+                return redirect('/product/' . $productId)->with('error', 'Không có id comment');
+            }
+
+            return redirect('/product/' . $productId)->with('success', 'xóa thành công');
+        } catch (\Throwable $th) {
+            return redirect('/')->with('error', 'Không có id comment');
+        }
+    }
+}

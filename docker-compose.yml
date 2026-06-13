@@ -1,0 +1,112 @@
+services:
+  laravel-app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: laravel-app:latest
+    container_name: laravel-app
+    restart: unless-stopped
+    ports:
+      - "8000:80"
+    volumes:
+      # Volumes cho source code (development mode)
+      - ./app:/var/www/app
+      - ./bootstrap:/var/www/bootstrap
+      - ./config:/var/www/config
+      - ./database:/var/www/database
+      - ./resources:/var/www/resources
+      - ./routes:/var/www/routes
+      
+      # Volumes quan trọng để giữ dữ liệu (persistence)
+      - ./public:/var/www/public
+      - ./storage:/var/www/storage
+      - ./.env:/var/www/.env
+      
+      # Named volume cho hình ảnh sản phẩm
+      - public_images:/var/www/public/img
+      - storage_public:/var/www/storage/app/public
+      
+      # Session storage
+      - storage_sessions:/var/www/storage/framework/sessions
+      
+    env_file:
+      - .env
+    environment:
+      - APP_ENV=docker
+    depends_on:
+      mysql-db:
+        condition: service_healthy
+    networks:
+      - laravel
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  mysql-db:
+    image: mysql:5.7
+    container_name: mysql-db
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: fruitshop
+      MYSQL_ALLOW_EMPTY_PASSWORD: "yes"
+    ports:
+      - "3308:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./initdb:/docker-entrypoint-initdb.d
+    networks:
+      - laravel
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis
+    container_name: redis
+    ports:
+      - "6379:6379"
+    networks:
+      - laravel
+
+  mailpit:
+    image: axllent/mailpit
+    container_name: mailpit
+    ports:
+      - "8025:8025"
+    networks:
+      - laravel
+
+  phpmyadmin:
+    image: phpmyadmin/phpmyadmin
+    container_name: phpmyadmin
+    restart: unless-stopped
+    ports:
+      - "8080:80"
+    environment:
+      PMA_HOST: mysql-db
+      PMA_USER: root
+      PMA_PASSWORD: ""
+      UPLOAD_LIMIT: 300M
+    networks:
+      - laravel
+    depends_on:
+      - mysql-db
+
+volumes:
+  mysql_data:
+    driver: local
+  public_images:
+    driver: local
+  storage_public:
+    driver: local
+  storage_sessions:
+    driver: local
+
+
+networks:
+  laravel:
+    driver: bridge
