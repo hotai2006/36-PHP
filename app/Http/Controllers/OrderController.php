@@ -166,7 +166,7 @@ class OrderController extends Controller
             $time = strval(time());
             $orderId = "MOMO" . $time;
             $orderInfo = "Payment for order " . $orderId;
-            $amount = strval($finalPrice);
+            $amount = number_format($finalPrice, 0, '', '');
             $requestId = "MOMO" . $time . "001";
 
             // Tạo yêu cầu thanh toán MOMO
