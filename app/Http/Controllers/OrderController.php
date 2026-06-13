@@ -133,6 +133,10 @@ class OrderController extends Controller
         $data = $request->only(['receiverName', 'receiverAddress', 'receiverPhone', 'paymentMethod']);
         $cartData = $this->cartService->fetchCartByUser($userId);
 
+        if (empty($cartData['cartDetails']) || count($cartData['cartDetails']) == 0) {
+            return redirect()->route('getCartPage')->with('error', 'Giỏ hàng của bạn đang trống hoặc các sản phẩm đã được thanh toán!');
+        }
+
         $totalPrice = $cartData['totalPrice'];
         $couponCode = $request->input('coupon_code');
         $discount = 0;
